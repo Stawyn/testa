@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # SQL Server Database
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2017-latest
+    container_name: visual3-sqlserver
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=SenhaForte123!
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+      - ./database:/docker-entrypoint-initdb.d
+    networks:
+      - visual3-network
+    restart: unless-stopped
+    healthcheck:
+      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "SenhaForte123!" -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Python Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: visual3-backend
+    environment:
+      - DATABASE_HOST=sqlserver
+      - DATABASE_PORT=1433
+      - DATABASE_NAME=TESTE5
+      - DATABASE_USER=sa
+      - DATABASE_PASSWORD=SenhaForte123!
+      - SECRET_KEY=change-this-secret-key-in-production-please
+      - ENVIRONMENT=development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_cache:/app/.cache
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - visual3-network
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # React/Vue Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: visual3-frontend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - visual3-network
+    restart: unless-stopped
+    command: npm run dev -- --host
+
+volumes:
+  sqlserver_data:
+    driver: local
+  backend_cache:
+    driver: local
+
+networks:
+  visual3-network:
+    driver: bridge
